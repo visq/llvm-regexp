@@ -71,7 +71,7 @@ getcMatcher re = do
   dump <- dumpProto
   createNamedFunction ExternalLinkage "matcher" $ do
 
-    arr <- arrayMalloc arrSize :: CodeGenFunction r (Value (Ptr Word32))  -- allocate arr
+    arr <- arrayAlloca arrSize :: CodeGenFunction r (Value (Ptr Word32))  -- allocate arr
     forLoop (v32 0) (v32 arrSize) () $ \ix _ -> do                        -- memset all elements in arr to 0
       ap <- getElementPtr arr (ix, ())
       store (valueOf 0) ap
