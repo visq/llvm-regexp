@@ -72,12 +72,12 @@ getcMatcher re = do
   createNamedFunction ExternalLinkage "matcher" $ do
 
     arr <- arrayMalloc arrSize :: CodeGenFunction r (Value (Ptr Word32))  -- allocate arr
-    forLoop (v32 0) (v32 (arrSize-1)) () $ \ix _ -> do                    -- memset all elements in arr to 0
+    forLoop (v32 0) (v32 arrSize) () $ \ix _ -> do                        -- memset all elements in arr to 0
       ap <- getElementPtr arr (ix, ())
       store (valueOf 0) ap
 
-    a_init <- getElementPtr arr (v32 0, ())                               -- a -> last buffer
-    b_init <- getElementPtr arr (v32 (fromIntegral$ count re), ())        -- b -> current buffer
+    -- a_init <- getElementPtr arr (v32 0, ())                               -- a -> last buffer
+    -- b_init <- getElementPtr arr (v32 (fromIntegral$ count re), ())        -- b -> current buffer
 
     top <- getCurrentBasicBlock                                           -- loop initialization stuff
     loop <- newBasicBlock
@@ -89,8 +89,6 @@ getcMatcher re = do
     defineBasicBlock loop
     first <- phi [(valueOf True, top)]                                    -- initially, first is True
     final <- phi [(valueOf (if empty re then True else False), top)]      -- initially, top is True if re accepts eps
-    a     <- phi [(a_init, top)]
-    b     <- phi [(b_init, top)]
     ch  <- invoke loop_r exit getc                                        -- invoke getc to get one character
   
     defineBasicBlock loop_r
@@ -98,16 +96,14 @@ getcMatcher re = do
     condBr t exit body
 
     defineBasicBlock body                                                 -- Define the loop body
-    generateRegexpCode re first a b ch                                    -- generate regexp matcher code
-    final' <- genFinalStateCheck (finalStates $ number re) a (valueOf False) -- check whether we are in final state 
+    final' <- genFinalStateCheck (finalStates $ number re) arr (valueOf False) -- check whether we are in final state 
+    generateRegexpCode re first arr ch                                    -- generate regexp matcher code
     --invoke body2 exit dump arr (valueOf arrSize) final'
     br body2
     
     defineBasicBlock body2
     addPhiInputs first [(valueOf False, body2)]                          -- first = false from second iteration on
     addPhiInputs final [(final', body2)]                                 
-    addPhiInputs a [(b, body2)]                                          -- swap a and b
-    addPhiInputs b [(a, body2)]
     br loop                                                              -- And loop
      
     defineBasicBlock exit
@@ -115,22 +111,21 @@ getcMatcher re = do
     final_w32 <- zext final                                               -- LLVM bindings currently do not have Generic Bool
     ret $ (final_w32 :: Value Word32)
   where
-    arrSize = fromIntegral (2 * count re) :: Word32
+    arrSize = fromIntegral (count re) :: Word32
     v32 v = valueOf v :: Value Word32
 
-generateRegexpCode :: Reg Char -> Value Bool -> Value (Ptr Word32) ->
-                      Value (Ptr Word32) -> Value Int32 -> CodeGenFunction r (Value Bool)
-generateRegexpCode re first a b ch = genC first (number re) where
+generateRegexpCode :: Reg Char -> Value Bool -> Value (Ptr Word32) -> Value Int32 -> CodeGenFunction r (Value Bool)
+generateRegexpCode re first bitmask ch = genC first (number re) where
   genC :: Value Bool -> Reg (Char,Int) -> CodeGenFunction r (Value Bool)
   genC next r = case r of
     Sym (c,n) -> do tmp1 <- icmp IntEQ ch (valueOf (fromIntegral (ord c) :: Int32))
                     tmp2 <- and next tmp1
                     let nIx = fromIntegral n :: Word32
-                    bp   <- getElementPtr b (nIx, ()) 
+                    bp   <- getElementPtr bitmask (nIx, ()) 
+                    r <- load bp >>= trunc
                     tmp3 <- zext tmp2 :: CodeGenFunction r (Value Word32)
                     store tmp3 bp
-                    ap   <- getElementPtr a (nIx, ())
-                    load ap >>= trunc
+                    return r
     Seq r1 r2 -> do next1 <- genC next  r1
                     next2 <- genC next1 r2
                     next2 `or` (if (empty r2) then next1 else valueOf False)
@@ -138,7 +133,7 @@ generateRegexpCode re first a b ch = genC first (number re) where
                     next2 <- genC next r2
                     tmp   <- next1 `or` next2
                     tmp `or` (if (empty r1 || empty r2) then next else valueOf False)
-    Rep r     -> do next' <- genFinalStateCheck (finalStates r) a next
+    Rep r     -> do next' <- genFinalStateCheck (finalStates r) bitmask next
                     tmp   <- genC next' r
                     tmp `or` next
 
