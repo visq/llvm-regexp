@@ -58,53 +58,40 @@ finalStates r = case r of
   Eps       -> []
   Rep r     -> finalStates r
 
-getcProto :: CodeGenModule (Function (IO Int32))
-getcProto = newNamedFunction ExternalLinkage "getchar_unlocked"  
-
-dumpProto :: CodeGenModule (Function (Ptr Word32 -> Word32 -> Bool -> IO ()))
-dumpProto =  newNamedFunction ExternalLinkage "matcher_dump"  
-
 -- No Generic instance for Bool
-getcMatcher :: Reg Char -> CodeGenModule (Function (IO Word32))
+getcMatcher :: Reg Char -> CodeGenModule (Function (Ptr Word8 -> IO Word32))
 getcMatcher re = do
-  getc <- getcProto
-  dump <- dumpProto
-  createNamedFunction ExternalLinkage "matcher" $ do
+  createNamedFunction ExternalLinkage "matcher" $ \str -> do
 
     arr <- arrayAlloca arrSize :: CodeGenFunction r (Value (Ptr Word32))  -- allocate arr
-    forLoop (v32 0) (v32 arrSize) () $ \ix _ -> do                        -- memset all elements in arr to 0
+    forLoop (w32 0) (w32 arrSize) () $ \ix _ -> do                        -- memset all elements in arr to 0
       ap <- getElementPtr arr (ix, ())
       store (valueOf 0) ap
 
-    -- a_init <- getElementPtr arr (v32 0, ())                               -- a -> last buffer
-    -- b_init <- getElementPtr arr (v32 (fromIntegral$ count re), ())        -- b -> current buffer
-
     top <- getCurrentBasicBlock                                           -- loop initialization stuff
     loop <- newBasicBlock
-    loop_r <- newBasicBlock
-    [body,body2] <- replicateM 2 newBasicBlock
+    body <- newBasicBlock
     exit <- newBasicBlock
     br loop
 
     defineBasicBlock loop
     first <- phi [(valueOf True, top)]                                    -- initially, first is True
     final <- phi [(valueOf (if empty re then True else False), top)]      -- initially, top is True if re accepts eps
-    ch  <- invoke loop_r exit getc                                        -- invoke getc to get one character
-  
-    defineBasicBlock loop_r
-    t <- icmp IntSLT ch (valueOf (0 :: Int32))
+    strIx <- phi [(w32 0, top)]                                           -- i = 0
+    strp  <- getElementPtr str (strIx, ()) 
+    ch    <- load (strp :: Value (Ptr (Word8)))                           -- ch = str[i]
+    t     <- icmp IntEQ ch (valueOf (0 :: Word8))                         -- exit if ch==0
     condBr t exit body
 
     defineBasicBlock body                                                 -- Define the loop body
     final' <- genFinalStateCheck (finalStates $ number re) arr (valueOf False) -- check whether we are in final state 
     generateRegexpCode re first arr ch                                    -- generate regexp matcher code
-    --invoke body2 exit dump arr (valueOf arrSize) final'
-    br body2
     
-    defineBasicBlock body2
-    addPhiInputs first [(valueOf False, body2)]                          -- first = false from second iteration on
-    addPhiInputs final [(final', body2)]                                 
-    br loop                                                              -- And loop
+    strIx_next <- add strIx (w32 1)                                       -- add 1 to string index
+    addPhiInputs strIx [(strIx_next, body)]
+    addPhiInputs first [(valueOf False, body)]                            -- first = false from second iteration on
+    addPhiInputs final [(final', body)]                                 
+    br loop                                                               -- and loop
      
     defineBasicBlock exit
     
@@ -112,13 +99,13 @@ getcMatcher re = do
     ret $ (final_w32 :: Value Word32)
   where
     arrSize = fromIntegral (count re) :: Word32
-    v32 v = valueOf v :: Value Word32
+    w32 v   = valueOf v :: Value Word32
 
-generateRegexpCode :: Reg Char -> Value Bool -> Value (Ptr Word32) -> Value Int32 -> CodeGenFunction r (Value Bool)
+generateRegexpCode :: Reg Char -> Value Bool -> Value (Ptr Word32) -> Value Word8 -> CodeGenFunction r (Value Bool)
 generateRegexpCode re first bitmask ch = genC first (number re) where
   genC :: Value Bool -> Reg (Char,Int) -> CodeGenFunction r (Value Bool)
   genC next r = case r of
-    Sym (c,n) -> do tmp1 <- icmp IntEQ ch (valueOf (fromIntegral (ord c) :: Int32))
+    Sym (c,n) -> do tmp1 <- icmp IntEQ ch (valueOf (fromIntegral (ord c) :: Word8))
                     tmp2 <- and next tmp1
                     let nIx = fromIntegral n :: Word32
                     bp   <- getElementPtr bitmask (nIx, ()) 
@@ -157,18 +144,18 @@ onec = Seq nocs (Sym 'c')
 main = do
     let matcher = getcMatcher evencs
     writeCodeGenModule "matcher.bc" matcher
-
-    linkInJIT
-    stdoutMatcher <- do
-      m <- newNamedModule "matcher"
-      func <- defineModule m matcher
-      prov <- createModuleProviderForExistingModule m
-      runEngineAccess $ do
-        addModuleProvider prov
-        generateFunction func    
-
-    r <- stdoutMatcher
-    if r>0
-      then putStrLn "Match"
-      else putStrLn "No Match"
+    -- 
+    -- linkInJIT
+    -- stdoutMatcher <- do
+    --   m <- newNamedModule "matcher"
+    --   func <- defineModule m matcher
+    --   prov <- createModuleProviderForExistingModule m
+    --   runEngineAccess $ do
+    --     addModuleProvider prov
+    --     generateFunction func    
+    -- 
+    -- r <- stdoutMatcher
+    -- if r>0
+    --   then putStrLn "Match"
+    --   else putStrLn "No Match"
     return ()
