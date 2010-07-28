@@ -10,6 +10,7 @@ import LLVM.ExecutionEngine
 import LLVM.FFI.ExecutionEngine (linkInJIT)
 import LLVM.Util.Loop
 import LLVM.Util.File
+import qualified Data.ByteString.Lazy as BS
 import Text.Printf
 import Prelude hiding (and,or)
 import Debug.Trace
@@ -20,6 +21,11 @@ data Reg c = Eps
          | Alt (Reg c) (Reg c)
          | Seq (Reg c) (Reg c)
          | Rep (Reg c)
+
+rep :: Int -> Reg c -> Reg c
+rep 0 _ = Eps
+rep 1 r = r
+rep n r = r `Seq` (rep (n-1) r)
 
 empty :: Reg c -> Bool
 empty r = case r of
@@ -58,11 +64,11 @@ finalStates r = case r of
   Eps       -> []
   Rep r     -> finalStates r
 
--- No Generic instance for Bool
-getcMatcher :: Reg Char -> CodeGenModule (Function (Ptr Word8 -> IO Word32))
-getcMatcher re = do
+-- The matcher ignores the last character (newline)
+regexMatcher :: Reg Char -> CodeGenModule (Function (Ptr Word8 -> IO Word32))
+regexMatcher re = do
   createNamedFunction ExternalLinkage "matcher" $ \str -> do
-
+    let arrSize = fromIntegral (count re) :: Word32
     arr <- arrayAlloca arrSize :: CodeGenFunction r (Value (Ptr Word32))  -- allocate arr
     forLoop (w32 0) (w32 arrSize) () $ \ix _ -> do                        -- memset all elements in arr to 0
       ap <- getElementPtr arr (ix, ())
@@ -98,7 +104,6 @@ getcMatcher re = do
     final_w32 <- zext final                                               -- LLVM bindings currently do not have Generic Bool
     ret $ (final_w32 :: Value Word32)
   where
-    arrSize = fromIntegral (count re) :: Word32
     w32 v   = valueOf v :: Value Word32
 
 generateRegexpCode :: Reg Char -> Value Bool -> Value (Ptr Word32) -> Value Word8 -> CodeGenFunction r (Value Bool)
@@ -123,6 +128,9 @@ generateRegexpCode re first bitmask ch = genC first (number re) where
     Rep r     -> do next' <- genFinalStateCheck (finalStates r) bitmask next
                     tmp   <- genC next' r
                     tmp `or` next
+    Opt r     -> do next1 <- genC next r
+                    next1 `or` next  
+    Eps       -> do return next
 
 genFinalStateCheck :: [Int] -> Value (Ptr Word32) -> Value Bool -> CodeGenFunction r (Value Bool)
 genFinalStateCheck [] _ b   = return b
@@ -131,31 +139,31 @@ genFinalStateCheck (n:ns) arr b = do
   finalState <- load ap >>= trunc
   tmp <- b `or` (finalState :: Value Bool)
   genFinalStateCheck ns arr tmp
-    
-ab = (Seq (Sym 'a') (Sym 'b'))
-aorb = (Alt (Sym 'a') (Sym 'b'))
 
+regexpMatch :: (Ptr Word8 -> IO Word32) -> BS.ByteString -> IO Bool
+regexpMatch f bs =
+  withArray (BS.unpack bs) $ \cstr -> do
+    r <- f cstr
+    return (r > 0)
 -- ((a|b)*c(a|b)*c)*(a|b)
 evencs :: Reg Char
-evencs = Seq (Rep (Seq onec onec)) nocs
-nocs = Rep (Alt (Sym 'a') (Sym 'b'))
-onec = Seq nocs (Sym 'c')
+evencs = Seq (Rep (Seq onec onec)) nocs where
+  nocs = Rep (Alt (Sym 'a') (Sym 'b'))
+  onec = Seq nocs (Sym 'c')
 
+aopta :: Reg Char
+aopta = (rep 5000 (Opt (Sym 'a'))) `Seq` (rep 5000 (Sym 'a'))
+
+main :: IO ()
 main = do
-    let matcher = getcMatcher evencs
-    writeCodeGenModule "matcher.bc" matcher
-    -- 
-    -- linkInJIT
-    -- stdoutMatcher <- do
-    --   m <- newNamedModule "matcher"
-    --   func <- defineModule m matcher
-    --   prov <- createModuleProviderForExistingModule m
-    --   runEngineAccess $ do
-    --     addModuleProvider prov
-    --     generateFunction func    
-    -- 
-    -- r <- stdoutMatcher
-    -- if r>0
-    --   then putStrLn "Match"
-    --   else putStrLn "No Match"
+    let matcherCode = regexMatcher evencs
+    writeCodeGenModule "matcher.bc" matcherCode
+    
+    initializeNativeTarget
+    reMatch <- liftM regexpMatch (simpleFunction matcherCode)
+    BS.getContents >>= \c -> forM_ (BS.split (fromIntegral (ord '\n')) c) $ \l -> do
+      r <- reMatch l
+      if r
+        then putStrLn "Match"
+        else putStrLn "No Match"
     return ()
