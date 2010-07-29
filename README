@@ -1,0 +1,30 @@
+JIT-compiling code to match regular expressions
+===============================================
+
+This is a small demo, showing how to generate regular expression matchers using LLVM.
+It is inspired by the great Weighted Regular Expressions paper (http://sebfisch.github.com/haskell-regexp/).
+
+There is no documentation so far, only copies of mailing list communication.
+
+Introduction (28.7.2010)
+------------------------
+Taking a quick look at the PyPy blog post on JIT code generation for regular expressions, I thought it would be fun to implement a generator using the excellent LLVM bindings for haskell.
+
+The attached prototype does not scale for larger regexp, is mostly untested and probably unoptimized, but is quite a bit faster than ruby and python's re, with the code generation core only spanning 25 lines.
+
+Here is a biased (because the LLVM stuff needs to use bytestrings) and completely unrepresentative comparison for the "even number of c's" regular expressions:
+
+> ruby -e 'print("accbccacbc" * 10000000)' > test.in
+
+> # Using weighted-regexp-0.2.0.0 and the RE from the paper
+> time ./TestWeightedRegexp < test.in # using the RE from the paper
+       58.34 real        56.65 user         1.10 sys
+
+> time ruby -e 'gets =~ /\A(?:[ab]*c[ab]*c)*[ab]*\Z/' < test.in
+        7.42 real         6.23 user         1.03 sys
+
+> time ./TestRegExpLLVM < test.in # using the RE from the paper
+        1.37 real         1.14 user         0.15 sys
+
+For large regular expressions, the generated bitcode serves as a good stress test for LLVM's backend ;) 
+
