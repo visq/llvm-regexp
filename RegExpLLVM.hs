@@ -70,8 +70,8 @@ finalStates re = case re of
 
 -- | Run the given low-level query, which takes an array of characters and returns
 -- a boolean value, on the given bytestring
-runOnString :: (Ptr Word8 -> Word32 -> IO Word32) -> BS.ByteString -> IO Bool
-runOnString f bs = do
+runMatcher :: (Ptr Word8 -> Word32 -> IO Word32) -> BS.ByteString -> IO Bool
+runMatcher f bs = do
   let (fptr,offset,len) = toForeignPtr bs
   r <- withForeignPtr fptr $ \ptr -> f (ptr `plusPtr` offset) (fromIntegral len)
   return (r > 0)
@@ -174,7 +174,7 @@ main = do
     writeCodeGenModule "matcher.bc" matcherCode
     
     initializeNativeTarget
-    matches <- liftM ((unsafePerformIO.) . runOnString) (simpleFunction matcherCode)
+    matches <- liftM ((unsafePerformIO.) . runMatcher) (simpleFunction matcherCode)
 
     input <- BS.getContents
     forM_ (zip [1..] $ BS.split (fromIntegral (ord '\n')) input) $ \(ix, line) -> do

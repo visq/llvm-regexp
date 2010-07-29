@@ -1,6 +1,6 @@
 all: RegExpLLVM
 
-RegExpLLVM: RegExpLLVM.hs Parser.y
+RegExpLLVM: RegExpLLVM.hs Parser.y RegExp.hs
 	happy Parser.y
 	ghc -O2 --make RegExpLLVM.hs
 
