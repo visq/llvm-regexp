@@ -77,7 +77,7 @@ runOnString f bs = do
   return (r > 0)
 
 -- | Generate code for matching the given regular expression
-regexMatcher :: RegExp Char -> CodeGenModule (Function (Ptr Word8 -> Word32 -> IO Word32))
+regexMatcher :: RegExp -> CodeGenModule (Function (Ptr Word8 -> Word32 -> IO Word32))
 regexMatcher regexp = do
   createNamedFunction ExternalLinkage "matcher" $ \string len -> do
     let re = numberStateIndices regexp

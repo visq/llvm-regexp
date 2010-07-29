@@ -9,7 +9,13 @@
 -- 
 -- Regular Expression Datatype and smart constructors
 -----------------------------------------------------------------------------
-module RegExp where
+module RegExp (
+  Reg(..),
+  RegExp,
+  eps, sym, opt, rep, alt, seq_, nrep, char, psym, anySym, rep1, brep,
+  empty,
+  evencs, manyas
+) where
 import Data.Generics
 
 data Reg a c = 
@@ -21,40 +27,40 @@ data Reg a c =
   | Rep a (Reg a c)
   deriving (Show,Read,Typeable,Data)
 
-type RegExp c = Reg () c
+type RegExp = Reg () Char
 
-eps :: RegExp c
+eps :: RegExp
 eps = Eps ()
 
-sym :: c -> RegExp c
+sym :: Char -> RegExp
 sym = Sym ()
 
-opt,rep :: RegExp c -> RegExp c
+opt,rep :: RegExp -> RegExp
 opt = Opt ()
 rep = Rep ()
 
-alt, seq_ :: RegExp c -> RegExp c -> RegExp c
+alt, seq_ :: RegExp -> RegExp -> RegExp
 alt = Alt ()
 seq_ = Seq ()
 
-nrep :: Int -> RegExp c -> RegExp c
+nrep :: Int -> RegExp -> RegExp
 nrep 0 _ = Eps ()
 nrep 1 r = r
 nrep n r = r `seq_` (nrep (n-1) r)
 
-char :: Char -> RegExp Char
+char :: Char -> RegExp
 char = sym
 
 --psym :: RegExp c
 psym = error "character classes are not yet supported"
 
-anySym :: RegExp c
+anySym :: RegExp
 anySym = error "/./ is not yet supported"
 
-rep1 :: RegExp c -> RegExp c
+rep1 :: RegExp -> RegExp
 rep1 re = re `seq_` rep re
 
-brep :: (Int,Int) -> RegExp c -> RegExp c
+brep :: (Int,Int) -> RegExp -> RegExp
 brep = error "{a,b} is not yet supported"
 
 empty :: Reg a c -> Bool
@@ -66,10 +72,10 @@ empty r = case r of
 
 -- examples
 -- ((a|b)*c(a|b)*c)*(a|b)*
-evencs :: RegExp Char
+evencs :: RegExp
 evencs = (rep (onec `seq_` onec)) `seq_` nocs where
   nocs = rep ((sym 'a')  `alt` (sym 'b'))
   onec = nocs `seq_` (sym 'c')
 
-manyas :: RegExp Char
+manyas :: RegExp
 manyas = (nrep 500 (opt (sym 'a'))) `seq_` (nrep 500 (sym 'a'))
