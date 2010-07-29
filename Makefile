@@ -5,7 +5,7 @@ RegExpLLVM: RegExpLLVM.hs Parser.y
 	ghc -O2 --make RegExpLLVM.hs
 
 smoke: RegExpLLVM
-	./RegExpLLVM < tests/evencs_smoke.in | diff tests/evencs_smoke.expect --to=-
+	./RegExpLLVM '((a|b)*c(a|b)*c)*(a|b)*' < tests/evencs_smoke.in | diff tests/evencs_smoke.expect --to=-
 
 check: 	matcher.bc
 	llvm-dis matcher.bc

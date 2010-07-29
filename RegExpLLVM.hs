@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables, DeriveDataTypeable #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 -----------------------------------------------------------------------------
 -- |
 -- Module      :  RegExpLLVM
@@ -26,45 +26,12 @@ import LLVM.Core
 import LLVM.ExecutionEngine
 import LLVM.Util.Loop
 import LLVM.Util.File
+import System.Environment
 import System.IO.Unsafe
 import Text.Printf
 
-data Reg a c = 
-    Eps a
-  | Sym a c
-  | Opt a (Reg a c)
-  | Alt a (Reg a c) (Reg a c)
-  | Seq a (Reg a c) (Reg a c)
-  | Rep a (Reg a c)
-  deriving (Show,Read,Typeable,Data)
-
-type RegExp c = Reg () c
-
-eps :: RegExp c
-eps = Eps ()
-
-sym :: c -> RegExp c
-sym = Sym ()
-
-opt,rep :: RegExp c -> RegExp c
-opt = Opt ()
-rep = Rep ()
-
-alt, seq_ :: RegExp c -> RegExp c -> RegExp c
-alt = Alt ()
-seq_ = Seq ()
-
-nrep :: Int -> RegExp c -> RegExp c
-nrep 0 _ = Eps ()
-nrep 1 r = r
-nrep n r = r `seq_` (nrep (n-1) r)
-
-empty :: Reg a c -> Bool
-empty r = case r of
-  Sym _ _ -> False
-  Alt _ r1 r2 -> empty r1 || empty r2
-  Seq _ r1 r2 -> empty r1 && empty r2
-  _ -> True
+import RegExp
+import Parser
 
 -- count AST nodes fullfilling the given predicate
 count :: (Data a, Data c) => (Reg a c -> Bool) -> Reg a c -> Int
@@ -207,25 +174,18 @@ genFinalStateCheck (n:ns) bitset b = do
   tmp <- b `or` (finalState :: Value Bool)
   genFinalStateCheck ns bitset tmp
 
-evencs :: RegExp Char
-evencs = (rep (onec `seq_` onec)) `seq_` nocs where
-  nocs = rep ((sym 'a')  `alt` (sym 'b'))
-  onec = nocs `seq_` (sym 'c')
-
-manyas :: RegExp Char
-manyas = (nrep 500 (opt (sym 'a'))) `seq_` (nrep 500 (sym 'a'))
-
+-- grep replacement
 main :: IO ()
 main = do
-    let matcherCode = regexMatcher evencs
+    args <- getArgs
+    when (null args) $ ioError (userError "Usage: ./RegExpLLVM regexp < file")
+    regex <- liftM (parse . head) getArgs
+    let matcherCode = regexMatcher regex
     writeCodeGenModule "matcher.bc" matcherCode
     
     initializeNativeTarget
     matches <- liftM ((unsafePerformIO.) . runOnString) (simpleFunction matcherCode)
 
     input <- BS.getContents
-    forM_ (BS.split (fromIntegral (ord '\n')) input) $ \line -> do
-      if matches line
-        then putStrLn "Match"
-        else putStrLn "No Match"
-    return ()
+    forM_ (zip [1..] $ BS.split (fromIntegral (ord '\n')) input) $ \(ix, line) -> do
+      putStrLn $ "Line " ++ show ix ++ ": " ++ (if matches line then "match" else "NO match")
