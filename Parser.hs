@@ -5,7 +5,7 @@
 module Parser ( parse ) where
 
 import RegExp
-  ( eps, char, psym, anySym, alt, seq_, rep, rep1, opt, brep )
+  ( eps, char, psym, anySym, alt, seq_, rep, rep1, opt, brep, CharClass(..) )
 
 import Data.Char ( isSpace, toLower, isAlphaNum, isDigit )
 
@@ -169,7 +169,7 @@ happyReduction_9 _ _  = notHappyAtAll
 happyReduce_10 = happySpecReduce_1  4 happyReduction_10
 happyReduction_10 (HappyTerminal (Cls happy_var_1))
 	 =  HappyAbsSyn4
-		 (uncurry psym happy_var_1
+		 (psym happy_var_1
 	)
 happyReduction_10 _  = notHappyAtAll 
 
@@ -229,7 +229,7 @@ parse = parseTokens . scan
 
 data Token = Seq | Sym Char | Ast | Bar | L | R
            | Pls | Que | Bnd (Int,Int)
-           | Cls (String,Char -> Bool) | Dot
+           | Cls CharClass | Dot
 
 
 token :: Char -> Token
@@ -267,7 +267,7 @@ rseq _       = False
 process :: String -> [Token]
 process []            = []
 
-process ('\\':c:cs)   = Cls (['\\',c],symClassPred c) : process cs
+process ('\\':c:cs)   = Cls (symClassPred c) : process cs
 
 process ('{':cs)      = case reads cs of
                           (n,'}':s1) : _ -> Bnd (n,n) : process s1
@@ -277,45 +277,40 @@ process ('{':cs)      = case reads cs of
                                 _              -> token '{' : process cs
                           _              -> token '{' : process cs
 
-process ('[':'^':cs)  = Cls (('[':'^':s),not.p) : process xs
+process ('[':'^':cs)  = Cls (ClsNegate p) : process xs
  where (s,p,xs) = processCls cs
 
-process ('['    :cs)  = Cls ('[':s,p) : process xs
+process ('['    :cs)  = Cls (p) : process xs
  where (s,p,xs) = processCls cs
 
 process (c:cs)        = token c : process cs
 
-processCls :: String -> (String, Char -> Bool, String)
+processCls :: String -> (String, CharClass, String)
 
 processCls []           = parseError []
 
-processCls (']':cs)     = ("]", const False, cs)
+processCls (']':cs)     = ("]", ClsNone, cs)
 
 processCls ('\\':c:cs)
-  | isSymClassChar c    = ('\\':c:s, \x -> symClassPred c x || p x, xs)
- where (s,p,xs) = processCls cs
+  | isSymClassChar c    = ('\\':c:s, symClassPred c `ClsUnion` clss, xs)
+ where (s,clss,xs) = processCls cs
 
-processCls ('\\':c:cs)  = ('\\':c:s, \x -> x==c || p x, xs)
- where (s,p,xs) = processCls cs
+processCls ('\\':c:cs)  = ('\\':c:s, ClsChar c `ClsUnion` clss, xs)
+ where (s,clss,xs) = processCls cs
 
 processCls (c:'-':e:cs) | e /= ']'
-                        = (c:'-':e:s, \d -> (c<=d && d<=e) || p d, xs)
- where (s,p,xs) = processCls cs
+                        = (c:'-':e:s, ClsRange (c,e) `ClsUnion` clss, xs)
+ where (s,clss,xs) = processCls cs
 
-processCls (c:cs)       = (c:s, \b -> b==c || p b, xs)
- where (s,p,xs) = processCls cs
+processCls (c:cs)       = (c:s, ClsChar c `ClsUnion` clss, xs)
+ where (s,clss,xs) = processCls cs
 
 isSymClassChar :: Char -> Bool
 isSymClassChar = (`elem`"wWdDsS")
 
-symClassPred :: Char -> Char -> Bool
-symClassPred 'w' = isWordChar
-symClassPred 'd' = isDigit
-symClassPred 's' = isSpace
-symClassPred 'W' = not . isWordChar
-symClassPred 'D' = not . isDigit
-symClassPred 'S' = not . isSpace
-symClassPred  c  = (c==)
+symClassPred :: Char -> CharClass
+symClassPred  c  | isSymClassChar c  = ClsClass c
+                 | otherwise         = ClsChar c
 
 isWordChar :: Char -> Bool
 isWordChar c = c == '_' || isAlphaNum c

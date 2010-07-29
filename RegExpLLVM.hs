@@ -34,23 +34,23 @@ import RegExp
 import Parser
 
 -- count AST nodes fullfilling the given predicate
-count :: (Data a, Data c) => (Reg a c -> Bool) -> Reg a c -> Int
+count :: (Data a) => (Reg a -> Bool) -> Reg a -> Int
 count p = synthesize 0 (+) (mkQ (const 0) (\re -> if p re then (1+) else id))
 
 -- the next three functions could certainly be implemented using
 -- a more general idioms
 
-countStateIndices :: (Data a, Data c) => Reg a c -> Int
+countStateIndices :: (Data a) => Reg a -> Int
 countStateIndices re = count `flip` re $ \subreg -> case subreg of
   Sym _ _ -> True
   _       -> False
 
 -- number state indices (Sym and Rep)
-numberStateIndices :: (Show c) => Reg a c -> Reg Int c
+numberStateIndices :: Reg a -> Reg Int
 numberStateIndices = (evalState `flip` 0) . numberM
   where
   ticket = State $ \n -> (n, n+1)
-  numberM :: (Show c) => Reg a c -> State Int (Reg Int c)
+  numberM :: Reg a -> State Int (Reg Int)
   numberM (Sym _ c) = liftM (\t -> (Sym t c)) ticket
   numberM (Rep _ r) = liftM (Rep (-1)) (numberM r)
   numberM (Eps _)   = return (Eps (-1))
@@ -59,7 +59,7 @@ numberStateIndices = (evalState `flip` 0) . numberM
   numberM (Seq _ r1 r2) = liftM2 (Seq (-1)) (numberM r1) (numberM r2)
 
 -- collect final states
-finalStates :: Reg Int c -> [Int]
+finalStates :: Reg Int -> [Int]
 finalStates re = case re of
   Sym a _     -> [a]
   Alt _ r1 r2 -> finalStates r1 ++ finalStates r2
@@ -131,11 +131,11 @@ regexMatcher regexp = do
   where
     w32 v   = valueOf v :: Value Word32
 
-generateRegexpCode :: Reg Int Char -> Value Bool -> Value (Ptr Bool) -> Value Word8 -> CodeGenFunction r (Value Bool)
+generateRegexpCode :: Reg Int -> Value Bool -> Value (Ptr Bool) -> Value Word8 -> CodeGenFunction r (Value Bool)
 generateRegexpCode re first bitmask ch = genC first re where
-  genC :: Value Bool -> Reg Int Char -> CodeGenFunction r (Value Bool)
+  genC :: Value Bool -> Reg Int -> CodeGenFunction r (Value Bool)
   genC next regexp = case regexp of
-    Sym n c      -> do  tmp1 <- icmp IntEQ ch (valueOf (fromIntegral (ord c) :: Word8))
+    Sym n c      -> do  tmp1 <- matchCharSet c ch
                         tmp2 <- and next tmp1
                         let nIx = fromIntegral n :: Word32
                         bp   <- getElementPtr bitmask (nIx, ()) 
@@ -156,6 +156,16 @@ generateRegexpCode re first bitmask ch = genC first re where
                       next1 `or` next  
     Eps _       -> do return next
 
+matchCharSet :: CharSet -> Value Word8 -> CodeGenFunction r (Value Bool)
+matchCharSet AnyChar _ = return (valueOf True) 
+matchCharSet (CharSet cs) ch = go cs where
+  go []     = error "empty charset not yet supported"
+  go [c]    = icmp IntEQ ch (valueOf (fromIntegral (ord c) :: Word8))
+  go (c:cs) = do
+    rc <- go [c]
+    rcs <- go cs
+    rc `or` rcs
+
 genFinalStateCheck :: [Int] -> Value (Ptr Bool) -> Value Bool -> CodeGenFunction r (Value Bool)
 genFinalStateCheck [] _ b   = return b
 genFinalStateCheck (n:ns) bitset b = do
@@ -164,7 +174,7 @@ genFinalStateCheck (n:ns) bitset b = do
   tmp <- b `or` (finalState :: Value Bool)
   genFinalStateCheck ns bitset tmp
 
--- grep replacement
+-- grep alike (last line)
 main :: IO ()
 main = do
     args <- getArgs
@@ -175,7 +185,11 @@ main = do
     
     initializeNativeTarget
     matches <- liftM ((unsafePerformIO.) . runMatcher) (simpleFunction matcherCode)
+    matches <- liftM ((unsafePerformIO.) . runMatcher) (simpleFunction matcherCode)
 
-    input <- BS.getContents
-    forM_ (zip [1..] $ BS.split (fromIntegral (ord '\n')) input) $ \(ix, line) -> do
-      putStrLn $ "Line " ++ show ix ++ ": " ++ (if matches line then "match" else "NO match")
+    (matchLines matches) `catch` (\_ -> return ())
+ where
+    matchLines :: (BS.ByteString -> Bool) -> IO ()
+    matchLines matches = forM_ [1..] $ \ix -> do
+       line <- BS.getLine
+       when (matches line) $ putStrLn $ "Line " ++ show ix ++ " matches"
