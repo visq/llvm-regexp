@@ -6,7 +6,13 @@ RegExpLLVM: RegExpLLVM.hs
 smoke: RegExpLLVM
 	./RegExpLLVM < tests/evencs_smoke.in | diff tests/evencs_smoke.expect --to=-
 
+check: 	matcher.bc
+	llvm-dis matcher.bc
+	opt matcher.bc -verify -stats
 
+matcher.bc: RegExpLLVM
+	(echo "" | ./RegExpLLVM) || echo "[ignore return value of RegExpLLVM]"
+	
 # Old build script, used before JIT worked
 # ./RegExpLLVM
 # llvm-as main.ll
