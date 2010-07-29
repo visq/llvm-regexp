@@ -43,7 +43,6 @@ count p = synthesize 0 (+) (mkQ (const 0) (\re -> if p re then (1+) else id))
 countStateIndices :: (Data a, Data c) => Reg a c -> Int
 countStateIndices re = count `flip` re $ \subreg -> case subreg of
   Sym _ _ -> True
-  Rep _ _ -> True
   _       -> False
 
 -- number state indices (Sym and Rep)
@@ -53,13 +52,13 @@ numberStateIndices = (evalState `flip` 0) . numberM
   ticket = State $ \n -> (n, n+1)
   numberM :: (Show c) => Reg a c -> State Int (Reg Int c)
   numberM (Sym _ c) = liftM (\t -> (Sym t c)) ticket
-  numberM (Rep _ r) = numberM r >>= \r' -> liftM (\t -> Rep t r') ticket
+  numberM (Rep _ r) = liftM (Rep (-1)) (numberM r)
   numberM (Eps _)   = return (Eps (-1))
   numberM (Opt _ r)  = liftM (Opt (-1)) (numberM r)
   numberM (Alt _ r1 r2) = liftM2 (Alt (-1)) (numberM r1) (numberM r2)
   numberM (Seq _ r1 r2) = liftM2 (Seq (-1)) (numberM r1) (numberM r2)
 
--- collect numbers of final states
+-- collect final states
 finalStates :: Reg Int c -> [Int]
 finalStates re = case re of
   Sym a _     -> [a]
@@ -153,15 +152,6 @@ generateRegexpCode re first bitmask ch = genC first re where
     Rep n r     -> do next' <- genFinalStateCheck (finalStates r) bitmask next
                       tmp   <- genC next' r
                       tmp `or` next
-    -- does not work yet...
-    -- Rep n r     -> do let nIx = fromIntegral n :: Word32
-    --                   bp   <- getElementPtr bitmask (nIx, ())
-    --                   nextOld <- load bp
-    --                   nextRep <- nextOld `or` next 
-    --                   nextSub <- genC nextRep r
-    --                   next'   <- nextSub `or` next
-    --                   store next' bp
-    --                   return next'
     Opt _ r     -> do next1 <- genC next r
                       next1 `or` next  
     Eps _       -> do return next

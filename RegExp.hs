@@ -1,4 +1,14 @@
 {-# LANGUAGE DeriveDataTypeable #-}
+-----------------------------------------------------------------------------
+-- |
+-- Module      :  RegExp
+-- Copyright   :  (c) 2010 Benedikt Huber
+-- License     :  BSD-style
+-- Stability   :  Early Demo
+-- Portability :  Test with ghc-6.10
+-- 
+-- Regular Expression Datatype and smart constructors
+-----------------------------------------------------------------------------
 module RegExp where
 import Data.Generics
 
@@ -54,6 +64,7 @@ empty r = case r of
   Seq _ r1 r2 -> empty r1 && empty r2
   _ -> True
 
+-- examples
 -- ((a|b)*c(a|b)*c)*(a|b)*
 evencs :: RegExp Char
 evencs = (rep (onec `seq_` onec)) `seq_` nocs where
