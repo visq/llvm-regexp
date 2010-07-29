@@ -1,19 +1,21 @@
--- Quick'n'Dirty LLVM Regexp matcher
+-- Demo: LLVM Regexp matcher; (c) 2010, Benedikt Huber <benedikt.huber@gmail.com>
+import Prelude hiding (and,or)
 import Control.Monad
 import Control.Monad.State
+import qualified Data.ByteString as BS
+import Data.ByteString.Internal (toForeignPtr)
 import Data.Char (ord)
 import Data.Word
 import Data.Int
+import Foreign.Ptr (plusPtr)
+import Foreign.ForeignPtr (withForeignPtr)
 import Foreign.Marshal.Array
 import LLVM.Core
 import LLVM.ExecutionEngine
-import LLVM.FFI.ExecutionEngine (linkInJIT)
 import LLVM.Util.Loop
 import LLVM.Util.File
-import qualified Data.ByteString.Lazy as BS
+import System.IO.Unsafe
 import Text.Printf
-import Prelude hiding (and,or)
-import Debug.Trace
 
 data Reg c = Eps
          | Sym c
@@ -64,10 +66,15 @@ finalStates r = case r of
   Eps       -> []
   Rep r     -> finalStates r
 
--- The matcher ignores the last character (newline)
-regexMatcher :: Reg Char -> CodeGenModule (Function (Ptr Word8 -> IO Word32))
+runOnString :: (Ptr Word8 -> Word32 -> IO Word32) -> BS.ByteString -> IO Bool
+runOnString f bs = do
+  let (fptr,offset,len) = toForeignPtr bs
+  r <- withForeignPtr fptr $ \ptr -> f (ptr `plusPtr` offset) (fromIntegral len)
+  return (r > 0)
+
+regexMatcher :: Reg Char -> CodeGenModule (Function (Ptr Word8 -> Word32 -> IO Word32))
 regexMatcher re = do
-  createNamedFunction ExternalLinkage "matcher" $ \str -> do
+  createNamedFunction ExternalLinkage "matcher" $ \string len -> do
     let arrSize = fromIntegral (count re) :: Word32
     arr <- arrayAlloca arrSize :: CodeGenFunction r (Value (Ptr Word32))  -- allocate arr
     forLoop (w32 0) (w32 arrSize) () $ \ix _ -> do                        -- memset all elements in arr to 0
@@ -84,14 +91,14 @@ regexMatcher re = do
     first <- phi [(valueOf True, top)]                                    -- initially, first is True
     final <- phi [(valueOf (if empty re then True else False), top)]      -- initially, top is True if re accepts eps
     strIx <- phi [(w32 0, top)]                                           -- i = 0
-    strp  <- getElementPtr str (strIx, ()) 
-    ch    <- load (strp :: Value (Ptr (Word8)))                           -- ch = str[i]
-    t     <- icmp IntEQ ch (valueOf (0 :: Word8))                         -- exit if ch==0
+    t     <- icmp IntEQ strIx len                                         -- exit if i==len
     condBr t exit body
 
     defineBasicBlock body                                                 -- Define the loop body
-    final' <- genFinalStateCheck (finalStates $ number re) arr (valueOf False) -- check whether we are in final state 
+    strp  <- getElementPtr string (strIx, ())                             -- get character
+    ch    <- load (strp :: Value (Ptr (Word8)))                           -- ch = str[i]
     generateRegexpCode re first arr ch                                    -- generate regexp matcher code
+    final' <- genFinalStateCheck (finalStates $ number re) arr (valueOf False) -- check whether we are in final state 
     
     strIx_next <- add strIx (w32 1)                                       -- add 1 to string index
     addPhiInputs strIx [(strIx_next, body)]
@@ -140,19 +147,13 @@ genFinalStateCheck (n:ns) arr b = do
   tmp <- b `or` (finalState :: Value Bool)
   genFinalStateCheck ns arr tmp
 
-regexpMatch :: (Ptr Word8 -> IO Word32) -> BS.ByteString -> IO Bool
-regexpMatch f bs =
-  withArray (BS.unpack bs) $ \cstr -> do
-    r <- f cstr
-    return (r > 0)
--- ((a|b)*c(a|b)*c)*(a|b)
 evencs :: Reg Char
 evencs = Seq (Rep (Seq onec onec)) nocs where
   nocs = Rep (Alt (Sym 'a') (Sym 'b'))
   onec = Seq nocs (Sym 'c')
 
-aopta :: Reg Char
-aopta = (rep 5000 (Opt (Sym 'a'))) `Seq` (rep 5000 (Sym 'a'))
+manyas :: Reg Char
+manyas = (rep 500 (Opt (Sym 'a'))) `Seq` (rep 500 (Sym 'a'))
 
 main :: IO ()
 main = do
@@ -160,10 +161,11 @@ main = do
     writeCodeGenModule "matcher.bc" matcherCode
     
     initializeNativeTarget
-    reMatch <- liftM regexpMatch (simpleFunction matcherCode)
-    BS.getContents >>= \c -> forM_ (BS.split (fromIntegral (ord '\n')) c) $ \l -> do
-      r <- reMatch l
-      if r
+    matches <- liftM ((unsafePerformIO.) . runOnString) (simpleFunction matcherCode)
+
+    input <- BS.getContents
+    forM_ (BS.split (fromIntegral (ord '\n')) input) $ \line -> do
+      if matches line
         then putStrLn "Match"
         else putStrLn "No Match"
     return ()
