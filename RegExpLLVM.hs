@@ -105,10 +105,10 @@ regexMatcher re = do
     
     defineBasicBlock arrayInitStart
     let arrSize = fromIntegral (count re) :: Word32                       -- size of the state array
-    arr <- arrayAlloca arrSize :: CodeGenFunction r (Value (Ptr Word32))  -- allocate array
+    arr <- arrayAlloca arrSize :: CodeGenFunction r (Value (Ptr Bool))    -- allocate array
     forLoop (w32 0) (w32 arrSize) () $ \ix _ -> do                        -- memset all elements in array to 0
       ap <- getElementPtr arr (ix, ())
-      store (valueOf 0) ap
+      store (valueOf False) ap
     arrayInitEnd <- getCurrentBasicBlock                                  -- we are now in a different basic block
     br loop
 
@@ -139,7 +139,7 @@ regexMatcher re = do
   where
     w32 v   = valueOf v :: Value Word32
 
-generateRegexpCode :: Reg Char -> Value Bool -> Value (Ptr Word32) -> Value Word8 -> CodeGenFunction r (Value Bool)
+generateRegexpCode :: Reg Char -> Value Bool -> Value (Ptr Bool) -> Value Word8 -> CodeGenFunction r (Value Bool)
 generateRegexpCode re first bitmask ch = genC first (number re) where
   genC :: Value Bool -> Reg (Char,Int) -> CodeGenFunction r (Value Bool)
   genC next r = case r of
@@ -147,9 +147,8 @@ generateRegexpCode re first bitmask ch = genC first (number re) where
                     tmp2 <- and next tmp1
                     let nIx = fromIntegral n :: Word32
                     bp   <- getElementPtr bitmask (nIx, ()) 
-                    r <- load bp >>= trunc
-                    tmp3 <- zext tmp2 :: CodeGenFunction r (Value Word32)
-                    store tmp3 bp
+                    r <- load bp
+                    store tmp2 bp
                     return r
     Seq r1 r2 -> do next1 <- genC next  r1
                     next2 <- genC next1 r2
@@ -165,11 +164,11 @@ generateRegexpCode re first bitmask ch = genC first (number re) where
                     next1 `or` next  
     Eps       -> do return next
 
-genFinalStateCheck :: [Int] -> Value (Ptr Word32) -> Value Bool -> CodeGenFunction r (Value Bool)
+genFinalStateCheck :: [Int] -> Value (Ptr Bool) -> Value Bool -> CodeGenFunction r (Value Bool)
 genFinalStateCheck [] _ b   = return b
 genFinalStateCheck (n:ns) arr b = do
   ap   <- getElementPtr arr (fromIntegral n :: Word32, ())
-  finalState <- load ap >>= trunc
+  finalState <- load ap
   tmp <- b `or` (finalState :: Value Bool)
   genFinalStateCheck ns arr tmp
 
