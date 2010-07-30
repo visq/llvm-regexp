@@ -23,8 +23,8 @@ Here is a biased (because the LLVM stuff needs to use bytestrings) and completel
 > time ruby -e 'gets =~ /\A(?:[ab]*c[ab]*c)*[ab]*\Z/' < test.in
         7.42 real         6.23 user         1.03 sys
 
-> time ./TestRegExpLLVM < test.in # using the RE from the paper
-        1.37 real         1.14 user         0.15 sys
+> time ./Grep '([ab]*c[ab]*c)*[ab]*' < test.in
+        0.96 real         0.79 user         0.16 sys
 
 For large regular expressions, the generated bitcode serves as a good stress test for LLVM's backend ;) 
 
