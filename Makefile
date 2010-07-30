@@ -1,7 +1,7 @@
 all: Grep
 
-Grep: Grep.hs RegExpLLVM.hs Parser.y RegExp.hs
-	happy Parser.y
+Grep: Grep.hs
+	(cd Text/RegExp/LLVM ; happy Parser.y)
 	ghc -O2 --make Grep.hs
 
 smoke: RegExpLLVM

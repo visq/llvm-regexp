@@ -10,7 +10,7 @@
 -- 
 -- Demo: Generating LLVM code to match regular expressions
 -----------------------------------------------------------------------------
-module RegExpLLVM where
+module Text.RegExp.LLVM where
 import Prelude hiding (and,or)
 import Control.Monad
 import Control.Monad.State
@@ -27,7 +27,7 @@ import LLVM.Core
 import LLVM.ExecutionEngine
 import LLVM.Util.Loop
 
-import RegExp
+import Text.RegExp.LLVM.RegExp
 
 -- count AST nodes fullfilling the given predicate
 count :: (Data a) => (Reg a -> Bool) -> Reg a -> Int

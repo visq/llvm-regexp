@@ -9,7 +9,7 @@
 -- 
 -- Regular Expression Datatype and smart constructors
 -----------------------------------------------------------------------------
-module RegExp (
+module Text.RegExp.LLVM.RegExp (
   CharClass(..),
   CharSet(..),
   Reg(..),

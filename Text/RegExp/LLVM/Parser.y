@@ -33,9 +33,9 @@
 {-# LANGUAGE NoMonomorphismRestriction  #-}
 {-# OPTIONS -fno-warn-incomplete-patterns -fno-warn-missing-signatures #-}
 
-module Parser ( parse ) where
+module Text.RegExp.LLVM.Parser ( parse ) where
 
-import RegExp
+import Text.RegExp.LLVM.RegExp
   ( eps, char, psym, anySym, alt, seq_, rep, rep1, opt, brep, CharClass(..) )
 
 import Data.Char ( isSpace, toLower, isAlphaNum, isDigit )

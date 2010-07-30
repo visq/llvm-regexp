@@ -7,10 +7,10 @@ import LLVM.Core
 import LLVM.ExecutionEngine
 import LLVM.Util.File
 import System.Environment
-import RegExpLLVM
 import System.IO.Unsafe
 
-import Parser
+import Text.RegExp.LLVM
+import Text.RegExp.LLVM.Parser
 
 main :: IO ()
 main = do
