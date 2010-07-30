@@ -1,8 +1,8 @@
-all: RegExpLLVM
+all: Grep
 
-RegExpLLVM: RegExpLLVM.hs Parser.y RegExp.hs
+Grep: Grep.hs RegExpLLVM.hs Parser.y RegExp.hs
 	happy Parser.y
-	ghc -O2 --make RegExpLLVM.hs
+	ghc -O2 --make Grep.hs
 
 smoke: RegExpLLVM
 	./RegExpLLVM '((a|b)*c(a|b)*c)*(a|b)*' < tests/evencs_smoke.in | diff tests/evencs_smoke.expect --to=-

@@ -10,6 +10,7 @@
 -- 
 -- Demo: Generating LLVM code to match regular expressions
 -----------------------------------------------------------------------------
+module RegExpLLVM where
 import Prelude hiding (and,or)
 import Control.Monad
 import Control.Monad.State
@@ -25,13 +26,8 @@ import Foreign.Marshal.Array
 import LLVM.Core
 import LLVM.ExecutionEngine
 import LLVM.Util.Loop
-import LLVM.Util.File
-import System.Environment
-import System.IO.Unsafe
-import Text.Printf
 
 import RegExp
-import Parser
 
 -- count AST nodes fullfilling the given predicate
 count :: (Data a) => (Reg a -> Bool) -> Reg a -> Int
@@ -173,28 +169,3 @@ genFinalStateCheck (n:ns) bitset b = do
   finalState <- load bitsetPtr
   tmp <- b `or` (finalState :: Value Bool)
   genFinalStateCheck ns bitset tmp
-
--- grep alike (last line)
-main :: IO ()
-main = do
-    args <- getArgs
-    when (null args) $ ioError (userError "Usage: ./RegExpLLVM regexp < file")
-    regex <- liftM (parse . head) getArgs
-
-    let matcherCode = regexMatcher regex
-    writeCodeGenModule "matcher.bc" matcherCode
-    
-    initializeNativeTarget
-    matches <- liftM ((unsafePerformIO.) . runMatcher) (simpleFunction matcherCode)
-
-    input <- BS.getContents
-    forM_ (zip [1..] $ BS.split (fromIntegral (ord '\n')) input) $ \(ix, line) -> do
-      when (matches line) $ putStrLn $ "Line " ++ show ix ++ " matches"
-
- -- this is match slower ??
- --    (matchLines matches) `catch` (\_ -> return ())
- -- where
- --    matchLines :: (BS.ByteString -> Bool) -> IO ()
- --    matchLines matches = forM_ [1..] $ \ix -> do
- --       line <- BS.getLine
- --       when (matches line) $ putStrLn $ "Line " ++ show ix ++ " matches"
