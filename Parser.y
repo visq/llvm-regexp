@@ -134,7 +134,7 @@ process ('{':cs)      = case reads cs of
 process ('[':'^':cs)  = Cls (ClsNegate p) : process xs
  where (s,p,xs) = processCls cs
 
-process ('['    :cs)  = Cls (p) : process xs
+process ('['    :cs)  = Cls p : process xs
  where (s,p,xs) = processCls cs
 
 process (c:cs)        = token c : process cs

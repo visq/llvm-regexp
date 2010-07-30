@@ -180,16 +180,21 @@ main = do
     args <- getArgs
     when (null args) $ ioError (userError "Usage: ./RegExpLLVM regexp < file")
     regex <- liftM (parse . head) getArgs
+
     let matcherCode = regexMatcher regex
     writeCodeGenModule "matcher.bc" matcherCode
     
     initializeNativeTarget
     matches <- liftM ((unsafePerformIO.) . runMatcher) (simpleFunction matcherCode)
-    matches <- liftM ((unsafePerformIO.) . runMatcher) (simpleFunction matcherCode)
 
-    (matchLines matches) `catch` (\_ -> return ())
- where
-    matchLines :: (BS.ByteString -> Bool) -> IO ()
-    matchLines matches = forM_ [1..] $ \ix -> do
-       line <- BS.getLine
-       when (matches line) $ putStrLn $ "Line " ++ show ix ++ " matches"
+    input <- BS.getContents
+    forM_ (zip [1..] $ BS.split (fromIntegral (ord '\n')) input) $ \(ix, line) -> do
+      when (matches line) $ putStrLn $ "Line " ++ show ix ++ " matches"
+
+ -- this is match slower ??
+ --    (matchLines matches) `catch` (\_ -> return ())
+ -- where
+ --    matchLines :: (BS.ByteString -> Bool) -> IO ()
+ --    matchLines matches = forM_ [1..] $ \ix -> do
+ --       line <- BS.getLine
+ --       when (matches line) $ putStrLn $ "Line " ++ show ix ++ " matches"
