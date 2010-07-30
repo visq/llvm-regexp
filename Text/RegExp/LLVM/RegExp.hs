@@ -3,6 +3,7 @@
 -- |
 -- Module      :  RegExp
 -- Copyright   :  (c) 2010 Benedikt Huber
+--                Uses Code (c) Thomas Wilke, Frank Huch, Sebastian Fischer
 -- License     :  BSD-style
 -- Stability   :  Early Demo
 -- Portability :  Test with ghc-6.10
@@ -88,8 +89,17 @@ anySym = Sym () AnyChar
 rep1 :: RegExp -> RegExp
 rep1 re = re `seq_` rep re
 
+-- Taken from weighted-regexp
 brep :: (Int,Int) -> RegExp -> RegExp
-brep = error "{a,b} is not yet supported"
+brep (n,m) r
+  | n < 0 || m < 0 || n > m  =  error msg
+  | n == 0 && m == 0         =  eps
+  | n == m                   =  foldr1 seq_ (replicate n r)
+  | otherwise                =  foldr seq_ rest (replicate n r)
+ where
+  rest = foldr nestopt (opt r) (replicate (m-n-1) r)
+  nestopt p q = opt (seq_ p q)
+  msg = "Text.RegExp.brep: invalid repetition bounds: " ++ show (n,m)
 
 empty :: Reg a -> Bool
 empty r = case r of
