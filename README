@@ -28,3 +28,35 @@ Here is a biased (because the LLVM stuff needs to use bytestrings) and completel
 
 For large regular expressions, the generated bitcode serves as a good stress test for LLVM's backend ;) 
 
+Rough Functionality (30.7.2010)
+-------------------------------
+
+The current implementation works as follows:
+
+It generates an LLVM function which matches a bytestring against a given  regular expression. The state of the 'automaton' consists of one bit for
+each leaf of the regexp AST, corresponding to the marks in the article's figure. It then generates straight-line code updating the state given an input character (generateRegexpCode and matchCharSet in Text.RegExp.LLVM).
+
+For example, for matching '.a' , the generated code looks like this in a simplified pseudo code notation:
+
+> ... next ~ first character matched
+> ... ch   ~ input character
+>   next1 = bitmask[0]              -- was '.' marked ?
+>   bitmask[0] = next               -- mark '.' if initial
+>   next2 = bitmask[1]              -- was 'a' marked ?
+>   bitmask[1] = ch == 'a' && next1 -- mark 'a' if '.' was marked                                          
+                                    -- and input is 'a'
+
+At the end of the string, code is generated to check whether the automaton is in a final state (genFinalStateCheck). In the example above, this corresponds to
+
+>   final = bitmask[1]
+
+The rest is either LLVM boilerplate (regexMatcher) or adaptions from weighed-regexp. Additionally, I've adapted the Parser.y from weighted-regexp, but some things (e.g. character classes like \w) are not implemented.
+
+Generating one big basic block for the whole regular expressions does not work well when there are more than a few thousand nodes in the AST. Using functions for large regular expressions and loop for repititions would be one solution. The other problem is that the matcher only operates on Word8s at the moment.
+
+Trying it out (if you have llvm+haskell bindings) is also easy (do not cabal-easy):
+
+> $ git clone git@github.com:visq/llvm-regexp.git && cd llvm-regexp
+> $ make
+> $ ./Grep '.*spotlight.*' < /etc/passwd 
+< Line 45 matches
